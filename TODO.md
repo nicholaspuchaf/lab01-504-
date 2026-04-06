@@ -1,0 +1,2 @@
+- Make the logging level adjustable and remove overly verbose log messages (e.g. in mm.c)
+- Make `snprintf` more complete (currently only `%d` and `%x` are supported)
