@@ -24,9 +24,9 @@
  *
  */
 
-#define PAGE_SHIFT 0UL					/* 12-bit page offset field */
-#define PAGE_SIZE  0UL					/* 2**12 = 4096 byte pages */
-#define PAGE_MASK  0UL					/* 0xfffffffffffff000 */
+#define PAGE_SHIFT 12UL					/* 12-bit page offset field */
+#define PAGE_SIZE  (1UL << PAGE_SHIFT)		/* 2**12 = 4096 byte pages */
+#define PAGE_MASK  (~(PAGE_SIZE - 1))		/* 0xfffffffffffff000 */
 
 /**
  * IS_ALIGNED(): Macro to check if a given address is page-aligned.
@@ -34,7 +34,7 @@
  *
  * Return: 1 if the address is aligned and 0 otherwise.
  */
-#define IS_ALIGNED(addr) (((u64) (addr) & 0UL))
+#define IS_ALIGNED(addr) ((((u64) (addr)) & (PAGE_SIZE - 1)) == 0)
 
 /**
  * PPN_DOWN(): Round address down to the nearest page boundary.
@@ -44,7 +44,7 @@
  *
  * Returns: the PPN of the nearest page boundary, rounded down.
  */
-#define PPN_DOWN(addr) ((u64) (addr) & 0UL)
+#define PPN_DOWN(addr) ((u64) (addr) >> PAGE_SHIFT)
 
 /**
  * PPN_UP(): Round address up to the nearest page boundary.
@@ -54,16 +54,16 @@
  *
  * Returns: the PPN of the nearest page boundary, rounded up.
  */
-#define PPN_UP(addr) ((u64) (addr) & 0UL)
+#define PPN_UP(addr) (((u64) (addr) + PAGE_SIZE - 1) >> PAGE_SHIFT)
 
 /* Helper macros for extractings page table indices */
 
-#define VPN_SHIFT_L2 0UL			/* VPN[2] = VA[38:30] */
-#define VPN_MASK_L2  0UL
-#define VPN_SHIFT_L1 0UL			/* VPN[1] = VA[29:21] */
-#define VPN_MASK_L1  0UL
-#define VPN_SHIFT_L0 0UL			/* VPN[0] = VA[20:12] */
-#define VPN_MASK_L0  0UL
+#define VPN_SHIFT_L2 30UL			/* VPN[2] = VA[38:30] */
+#define VPN_MASK_L2  0x1FFUL
+#define VPN_SHIFT_L1 21UL			/* VPN[1] = VA[29:21] */
+#define VPN_MASK_L1  0x1FFUL
+#define VPN_SHIFT_L0 12UL			/* VPN[0] = VA[20:12] */
+#define VPN_MASK_L0  0x1FFUL
 
 /**
  * va_get_index(): Extract the index within a pagetable from a virtual address.
@@ -74,15 +74,17 @@
  */
 __always_inline u64 va_get_index(u64 va, u64 level)
 {
-	info("va: 0x%x and level: 0x%x variables not used\n", va, level);
-	return 0UL;
+	if (level == 2) return (va >> VPN_SHIFT_L2) & VPN_MASK_L2;
+    if (level == 1) return (va >> VPN_SHIFT_L1) & VPN_MASK_L1;
+    if (level == 0) return (va >> VPN_SHIFT_L0) & VPN_MASK_L0;
+    return 0;
 }
 
-#define PTB_LEVELS      0UL				/* total PTB levels */
-#define PTB_INDEX_BITS  0UL				/* number of bits to map each index */
-#define PTE_SHIFT       0UL				/* pagetable entry shift/offset */
-#define PTE_PPN_MASK    0UL				/* mask to get only PPN from a pte */
-#define PTB_ENTRY_COUNT 0UL				/* the number of mappable entries is 2**n_bits in va */
+#define PTB_LEVELS      3UL				/* total PTB levels */
+#define PTB_INDEX_BITS  9UL				/* number of bits to map each index */
+#define PTE_SHIFT       10UL				/* pagetable entry shift/offset */
+#define PTE_PPN_MASK    ((1UL << 44) - 1)			/* mask to get only PPN from a pte */
+#define PTB_ENTRY_COUNT (1UL << PTB_INDEX_BITS)	/* the number of mappable entries is 2**n_bits in va */
 
 /**
  * Page table typedefs
@@ -118,8 +120,7 @@ struct pgtable {
  */
 static __always_inline ppn_t phys_to_ppn(phys_addr_t phys)
 {
-	info("phys: 0x%x variable not used\n", phys);
-	return 0UL;
+	return phys >> PAGE_SHIFT;
 }
 
 /**
@@ -127,8 +128,7 @@ static __always_inline ppn_t phys_to_ppn(phys_addr_t phys)
  */
 static __always_inline phys_addr_t ppn_to_phys(ppn_t ppn)
 {
-	info("ppn: 0x%x variable not used\n", ppn);
-	return 0UL;
+	return ppn << PAGE_SHIFT;
 }
 
 /**
@@ -136,8 +136,7 @@ static __always_inline phys_addr_t ppn_to_phys(ppn_t ppn)
  */
 static __always_inline ppn_t pte_get_ppn(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return 0UL;
+	return (pte >> PTE_SHIFT) & PTE_PPN_MASK;
 }
 
 /*
@@ -148,8 +147,7 @@ static __always_inline ppn_t pte_get_ppn(pte_t pte)
  */
 static __always_inline pte_t pte_from_ppn(ppn_t ppn)
 {
-	info("ppn: 0x%x variable not used\n", ppn);
-	return 0UL;
+	return (ppn & PTE_PPN_MASK) << PTE_SHIFT;
 }
 
 
@@ -161,8 +159,7 @@ static __always_inline pte_t pte_from_ppn(ppn_t ppn)
  */
 static __always_inline struct pgtable *pte_next_ptb(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return 0UL;
+	return (struct pgtable *)ppn_to_phys(pte_get_ppn(pte));
 }
 
 /**
@@ -177,42 +174,37 @@ static __always_inline pte_t *ptb_get_ptep(struct pgtable *ptb, u64 index)
 	return &ptb->entries[index];
 }
 
-#define PTE_VALID	0UL
-#define PTE_READ	0UL
-#define PTE_WRITE	0UL
-#define PTE_EXEC	0UL
-#define PTE_LEAF	0UL
+#define PTE_VALID   (1UL << 0)
+#define PTE_READ    (1UL << 1)
+#define PTE_WRITE   (1UL << 2)
+#define PTE_EXEC    (1UL << 3)
+#define PTE_LEAF    (PTE_READ | PTE_WRITE | PTE_EXEC)
 
 /* Inline functions to help manipulate PTEs. */
 
 static __always_inline bool pte_valid(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return false;
+	return (pte & PTE_VALID) != 0;
 }
 
 static __always_inline bool pte_readable(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return false;
+	return (pte & PTE_READ) != 0;
 }
 
 static __always_inline bool pte_writable(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return false;
+	return (pte & PTE_WRITE) != 0;
 }
 
 static __always_inline bool pte_executable(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return false;
+	return (pte & PTE_EXEC) != 0;
 }
 
 static __always_inline bool pte_leaf(pte_t pte)
 {
-	info("pte: 0x%x variable not used\n", pte);
-	return false;
+	return (pte & (PTE_READ | PTE_WRITE | PTE_EXEC)) != 0;
 }
 
 #endif
